@@ -2,52 +2,53 @@ defmodule Rpn do
   @moduledoc """
   Documentation for Rpn.
   """
+  use GenServer
+  alias Rpn.TapePrinter
 
-  def start do
-    { :ok, spawn(__MODULE__, :loop, [[]]) }
+  ### Client API
+
+  def start_link(options \\ []) do
+    GenServer.start_link(__MODULE__, [], options)
   end
 
-  def loop(stack) do
-    # We'll receive a message from another process, with a ref, and the atom
-    # `peek`. We will then send back a 2-tuple containing the ref they sent
-    # and the value of our stack.
-    receive do
-      { from, ref, :peek } ->
-        send(from, { ref, stack })
-        loop(stack)
-
-      { :push, :+ } ->
-        [second | [ first | rest ]] = stack
-        loop([first + second | rest])
-
-      { :push, :- } ->
-        [second | [ first | rest ]] = stack
-        loop([first - second | rest])
-
-      { :push, :x } ->
-        [second | [ first | rest ]] = stack
-        loop([first * second | rest])
-
-      { :push, val } -> loop([val | stack])
-    end
-  end
-
-  # We'll provide a function that makes it easy to send the message the loop is
-  # waiting for and then enters a receive loop of its own, awaiting a reply. The
-  # reason we make these unique references, by the way, is because anyone could
-  # send us a message at any time, and if it matched the pattern we were looking
-  # for we would accept it - this way we only match the message we're hoping to
-  # get back.
   def peek(pid) do
-    ref = make_ref()
-    send(pid, { self(), ref, :peek })
-    receive do
-      { ^ref, val } -> val
-    end
+    GenServer.call(pid, :peek)
   end
 
-  def push(pid, val) do
-    send(pid, { :push, val })
+  def push(pid, op) do
+    GenServer.cast(pid, {:push, op})
+  end
+
+  ### Server API
+
+  def init() do
+    {:ok, []}
+  end
+
+  def handle_call(:peek, _from, state) do
+    {:reply, state, state}
+  end
+
+  def handle_cast({:push, :+}, [ second | [ first | rest ] ]) do
+    val = first + second
+    TapePrinter.print(val)
+    {:noreply, [val | rest]}
+  end
+
+  def handle_cast({:push, :-}, [ second | [ first | rest ] ]) do
+    val = first - second
+    TapePrinter.print(val)
+    {:noreply, [val | rest]}
+  end
+
+  def handle_cast({:push, :x}, [ second | [ first | rest ] ]) do
+    val = first * second
+    TapePrinter.print(val)
+    {:noreply, [val | rest]}
+  end
+
+  def handle_cast({:push, val}, state) do
+    {:noreply, [val | state]}
   end
 
 end
